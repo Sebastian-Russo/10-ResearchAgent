@@ -25,16 +25,17 @@ def generate_report(topic: str, research: list[dict], depth: str) -> dict:
       - sources:   list of queries that contributed
       - word_count: approximate length
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-    # Build the full evidence block from all successful searches
-    evidence = "\n\n".join(
-        f"### Research from: '{r['query']}'\n{r['content']}"
-        for r in research
-        if r["success"]
-    )
+        # Build the full evidence block from all successful searches
+        evidence = "\n\n".join(
+            f"### Research from: '{r['query']}'\n{r['content']}"
+            for r in research
+            if r["success"]
+        )
 
-    prompt = f"""You are a professional research analyst writing a comprehensive report.
+        prompt = f"""You are a professional research analyst writing a comprehensive report.
 
 Topic: "{topic}"
 Research depth: {depth}
@@ -54,20 +55,63 @@ Requirements:
 
 Write the full report now:"""
 
-    response = client.messages.create(
-        model      = CLAUDE_MODEL_SMART,
-        max_tokens = 3000,
-        messages   = [{"role": "user", "content": prompt}]
-    )
+        response = client.messages.create(
+            model      = CLAUDE_MODEL_SMART,
+            max_tokens = 3000,
+            messages   = [{"role": "user", "content": prompt}]
+        )
 
-    report_text = response.content[0].text.strip()
+        report_text = response.content[0].text.strip()
 
-    # Save to disk
-    os.makedirs(REPORTS_DIR, exist_ok=True)
-    timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_topic  = re.sub(r'[^a-z0-9]+', '_', topic.lower())[:40]
-    filename    = f"{timestamp}_{safe_topic}.md"
-    filepath    = os.path.join(REPORTS_DIR, filename)
+        # Save to disk
+        os.makedirs(REPORTS_DIR, exist_ok=True)
+        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_topic  = re.sub(r'[^a-z0-9]+', '_', topic.lower())[:40]
+        filename    = f"{timestamp}_{safe_topic}.md"
+        filepath    = os.path.join(REPORTS_DIR, filename)
 
-    with open(filepath, "w") as f:
-        f.write(f"# {topic}\n\n")
+        with open(filepath, "w") as f:
+            f.write(f"# {topic}\n\n")
+            f.write(report_text)
+
+        sources = [r["query"] for r in research if r["success"]]
+        word_count = len(report_text.split())
+
+        return {
+            "report":     report_text,
+            "filepath":   filepath,
+            "sources":    sources,
+            "word_count": word_count
+        }
+    except Exception as e:
+        print(f"[Reporter] Error generating report: {e}")
+        # Return a fallback report when API fails
+        fallback_report = f"# {topic}\n\nError: Unable to generate report due to API issues. Raw research data:\n\n"
+        for r in research:
+            if r["success"]:
+                fallback_report += f"## {r['query']}\n{r['content']}\n\n"
+
+        # Still save the fallback
+        os.makedirs(REPORTS_DIR, exist_ok=True)
+        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_topic  = re.sub(r'[^a-z0-9]+', '_', topic.lower())[:40]
+        filename    = f"{timestamp}_{safe_topic}_fallback.md"
+        filepath    = os.path.join(REPORTS_DIR, filename)
+
+        with open(filepath, "w") as f:
+            f.write(fallback_report)
+
+        return {
+            "report":     fallback_report,
+            "filepath":   filepath,
+            "sources":    [r["query"] for r in research if r["success"]],
+            "word_count": len(fallback_report.split())
+        }
+
+    # This should never be reached due to returns above, but silences IDE warnings
+    return {
+        "report": "",
+        "filepath": "",
+        "sources": [],
+        "word_count": 0
+    }
