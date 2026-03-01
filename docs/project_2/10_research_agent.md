@@ -79,3 +79,37 @@ Sonnet synthesizes everything into a coherent document. The report gets saved to
 ### What makes this genuinely agentic
 
 Every previous project had a fixed pipeline — inputs went in, outputs came out, same steps every time. This agent makes decisions mid-run. It decides how many rounds to run based on what it finds. It decides what to search for in round 2 based on what was missing in round 1. It decides when enough is enough. The path through the code is different every time depending on the topic and what the searches return. Sonnet 4.6
+
+
+--------------------------------------------------------------------------------------------
+
+## Search Adjustments
+
+**More searches per round** — just increase SEARCHES_PER_ROUND in config. Easy but costs more tokens.
+**More rounds** — increase MAX_ROUNDS. The genocide topic hit the ceiling at 2, bumping to 3-4 would let it keep filling gaps.
+**Lower the gap threshold** — currently stops when fewer than 3 gaps remain. Dropping to 1 means it keeps searching until it's nearly complete.
+**Smarter gap detection** — right now it finds 5 gaps every round even when research is improving. We could change the prompt to score gap severity and only continue if high-severity gaps remain.
+**Cross-referencing** — after all searches complete, have Claude identify where sources agree vs conflict before writing the report. Adds a verification layer.
+**Source diversity check** — tell the planner to explicitly vary search angles each round so it doesn't circle back to similar queries.
+
+Looking at your run, the most obvious issue is that gaps never dropped below 5 across both rounds — meaning the gap detector isn't distinguishing between "critical missing information" and "would be nice to have." The planner was generating good targeted queries but the evaluator kept finding new gaps instead of acknowledging progress.
+
+## Adjustments to be made
+
+1. **Smarter gap detection** — severity scoring
+Instead of just counting gaps, score each one 1-3:
+
+3 = critical, report is incomplete without this
+2 = important, would strengthen the report
+1 = nice to have, minor detail
+
+Only continue searching if any score-3 gaps remain. This stops the agent from chasing minor gaps forever and explains why your genocide topic kept hitting 5 gaps — some of those were genuinely critical, others were just "more detail would be nice."
+
+2. **Progress awareness in the gap detector**
+Right now the gap detector reads all research but doesn't know what round it's on or how much progress was made since last round. We should tell it: "last round you found these 5 gaps, here's the new research, which gaps were actually filled?" That way it evaluates improvement not just remaining gaps, which is a much more honest stopping condition.
+These two changes work together — severity tells you what matters, progress awareness tells you if you're actually getting closer.
+One more I'd add:
+
+3. **Deduplicate queries across rounds**
+Your round 2 queries were good but slightly overlapped with round 1. The planner should receive the full list of queries already run so it never searches the same angle twice. One line change in **research_agent.py** — pass **all_research** queries to the planner so it knows what's already been covered.
+
