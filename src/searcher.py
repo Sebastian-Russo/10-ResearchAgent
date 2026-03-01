@@ -7,6 +7,7 @@ it searches the web, reads the pages, and returns a summary of what it found.
 We don't scrape anything ourselves — Claude handles the full search-and-read cycle.
 """
 
+import time
 import anthropic
 from src.config import ANTHROPIC_API_KEY, CLAUDE_MODEL_FAST
 
@@ -61,13 +62,20 @@ Be specific and factual. This summary will be used in a research report."""
 def run_searches(queries: list[str]) -> list[dict]:
     """Run searches for all queries in a round and return results."""
     results = []
-    for query in queries:
+    for i, query in enumerate(queries):
         result = search(query)
         if result["success"]:
             print(f"  [Searcher] ✓ Got {len(result['content'])} characters")
         else:
             print(f"  [Searcher] ✗ No content returned")
         results.append(result)
+
+        # Pause between searches to avoid hitting rate limits
+        # Deep mode fires 5 searches per round which can spike token usage
+        if i < len(queries) - 1:
+            print(f"  [Searcher] Waiting 3s to avoid rate limit...")
+            time.sleep(3)
+
     return results
 
 # The important thing to understand here is what's different from the Personal KB scraper.
