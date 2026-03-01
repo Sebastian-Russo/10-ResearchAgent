@@ -113,3 +113,156 @@ One more I'd add:
 3. **Deduplicate queries across rounds**
 Your round 2 queries were good but slightly overlapped with round 1. The planner should receive the full list of queries already run so it never searches the same angle twice. One line change in **research_agent.py** — pass **all_research** queries to the planner so it knows what's already been covered.
 
+
+## What tools actually are
+
+When you call the Anthropic API normally, Claude receives text and returns text. That's it — a one-shot input/output.
+
+### Tools change this into a conversation between your code and Claude:
+
+You → Claude: "here's a question, here are tools you can use"
+Claude → You: "I want to call tool X with these arguments"
+You → Claude: "here's what tool X returned"
+Claude → You: "based on that result, here's my answer"
+Claude doesn't execute tools itself — it just says "I want to use this tool with these inputs." Your code runs the actual tool and feeds the result back. Claude then continues reasoning with that result.
+
+### How tools are defined
+
+Every tool is a JSON schema you pass in the tools parameter:
+
+```pythontools = [
+    {
+        "name": "web_search",
+        "description": "Search the web for current information",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+]
+```
+
+Claude reads the description fields — that's how it decides when and how to use each tool. Good descriptions are everything.
+
+### The web search tool is special
+
+The tool we're using in searcher.py is different from custom tools:
+pythontools = [{"type": "web_search_20250305", "name": "web_search"}]
+This is a built-in Anthropic tool — Anthropic hosts and runs the actual search infrastructure. You don't implement the execution yourself. You just declare it and Claude handles the full search-and-read cycle internally. That's why searcher.py is so short — there's no scraping code because Anthropic's servers do it.
+
+### Tools you could build yourself
+
+These are custom tools where YOU write the execution code:
+
+Calculator
+```python
+python{
+    "name": "calculate",
+    "description": "Evaluate a mathematical expression",
+    "input_schema": {
+        "properties": {"expression": {"type": "string"}},
+        "required": ["expression"]
+    }
+}
+```
+You already built this in your ReAct agent (project 6).
+
+File reader
+```python
+python{
+    "name": "read_file",
+    "description": "Read the contents of a file from disk",
+    "input_schema": {
+        "properties": {"filepath": {"type": "string"}},
+        "required": ["filepath"]
+    }
+}
+```
+
+Database query
+```python
+python{
+    "name": "query_database",
+    "description": "Run a SQL query against the database",
+    "input_schema": {
+        "properties": {"sql": {"type": "string"}},
+        "required": ["sql"]
+    }
+}
+```
+
+HTTP request
+```python
+python{
+    "name": "fetch_url",
+    "description": "Fetch the content of a URL",
+    "input_schema": {
+        "properties": {"url": {"type": "string"}},
+        "required": ["url"]
+    }
+}
+```
+
+Send email
+```python
+python{
+    "name": "send_email",
+    "description": "Send an email to a recipient",
+    "input_schema": {
+        "properties": {
+            "to":      {"type": "string"},
+            "subject": {"type": "string"},
+            "body":    {"type": "string"}
+        },
+        "required": ["to", "subject", "body"]
+    }
+}
+```
+
+How you'd implement a custom tool in searcher.py
+
+If you wanted to add a custom tool alongside web search — say, a tool that searches your Personal KB from project 9 — it would look like this:
+
+```python
+pythontools = [
+    # Built-in Anthropic tool
+    {"type": "web_search_20250305", "name": "web_search"},
+
+    # Custom tool you define
+    {
+        "name": "search_personal_kb",
+        "description": "Search the user's personal knowledge base for previously saved articles",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"}
+            },
+            "required": ["query"]
+        }
+    }
+]
+```
+
+Then after the API call you check if Claude used your custom tool and execute it:
+
+```python
+for block in response.content:
+    if block.type == "tool_use" and block.name == "search_personal_kb":
+        # Claude wants to search the KB — you run it
+        kb_results = personal_kb.query(block.input["query"])
+        # Feed results back to Claude in a follow-up message
+```
+
+Why this matters for your remaining projects
+
+Workflow Automation — the whole project is tools. Gmail API becomes a send_email tool. Google Calendar becomes a check_calendar tool. Claude decides which tools to chain based on your request.
+
+Multi-Agent — agents call other agents as tools. The research agent becomes a tool that the manager agent can invoke. That's literally how multi-agent systems work under the hood.
+
+Tools are the mechanism that turns Claude from a text generator into something that can actually do things in the world.

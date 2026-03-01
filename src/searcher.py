@@ -29,6 +29,7 @@ def search(query: str) -> dict:
         model      = CLAUDE_MODEL_FAST,
         max_tokens = 1000,
         # This is how you give Claude tools — it decides when and how to use them
+        # tools available: web_search_20250305, web_search_20250305
         tools      = [{"type": "web_search_20250305", "name": "web_search"}],
         messages   = [{
             "role":    "user",
